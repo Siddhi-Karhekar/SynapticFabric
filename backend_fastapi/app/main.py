@@ -9,14 +9,34 @@ from fastapi.responses import StreamingResponse
 import asyncio
 import json
 
-from digital_twin.simulator import run_digital_twin, MACHINE_MEMORY
+# ------------------------------------------
+# INTERNAL MODULE IMPORTS
+# ------------------------------------------
+
+from digital_twin.simulator import run_digital_twin
 from backend_fastapi.ai_engine.machine_analyzer import machine_analyzer
 from backend_fastapi.ai_engine.context_store import LATEST_PLANT_CONTEXT
 from rag_assistant.rag_chain import generate_answer
 
+# DATABASE
+from backend_fastapi.database.database import engine
+from backend_fastapi.database.models import Base
+from backend_fastapi.database.logger import log_machine_state
+from backend_fastapi.database.database import SessionLocal
+from backend_fastapi.database.models import MachineLog
+# ==========================================
+# FASTAPI APP
+# ==========================================
 
 app = FastAPI(title="SynapticFabric API")
 
+# Create database tables
+Base.metadata.create_all(bind=engine)
+
+
+# ==========================================
+# SAFE JSON SERIALIZER
+# ==========================================
 
 def json_safe(data):
     return json.loads(json.dumps(data, default=str))
@@ -36,7 +56,7 @@ app.add_middleware(
 
 
 # ==========================================
-# REST ENDPOINTS
+# ROOT
 # ==========================================
 
 @app.get("/")
@@ -44,11 +64,20 @@ def root():
     return {"status": "SynapticFabric backend running"}
 
 
+# ==========================================
+# DIGITAL TWIN SNAPSHOT
+# ==========================================
+
 @app.get("/twin-status")
 def twin_status():
 
     machines = run_digital_twin()
+
     analyzed = machine_analyzer.analyze_machines(machines)
+
+    # store data in DB
+    for machine in analyzed:
+        log_machine_state(machine)
 
     valid = [
         m for m in analyzed
@@ -58,9 +87,54 @@ def twin_status():
     return json_safe(valid)
 
 
+# ==========================================
+# PLANT CONTEXT
+# ==========================================
+
 @app.get("/plant-context")
 def plant_context():
     return json_safe(LATEST_PLANT_CONTEXT)
+
+
+# ==========================================
+# WEBSOCKET STREAM
+# ==========================================
+
+@app.websocket("/ws/machines")
+async def machine_stream(ws: WebSocket):
+
+    await ws.accept()
+
+    print("✅ WebSocket connected")
+
+    try:
+
+        while True:
+
+            # 1️⃣ DIGITAL TWIN
+            machines = run_digital_twin()
+
+            # 2️⃣ ANALYZE MACHINES
+            analyzed_machines = machine_analyzer.analyze_machines(machines)
+
+            # 3️⃣ STORE DATA IN DATABASE
+            for machine in analyzed_machines:
+                log_machine_state(machine)
+
+            # 4️⃣ FILTER VALID MACHINES
+            valid = [
+                m for m in analyzed_machines
+                if isinstance(m, dict)
+                and m.get("machine_id") is not None
+            ]
+
+            # 5️⃣ SEND TO FRONTEND
+            await ws.send_json(json_safe(valid))
+
+            await asyncio.sleep(1)
+
+    except Exception as e:
+        print("🚨 WebSocket disconnected:", e)
 
 
 # ==========================================
@@ -69,6 +143,8 @@ def plant_context():
 
 @app.post("/maintenance/{machine_id}")
 def perform_maintenance(machine_id: str):
+
+    from digital_twin.simulator import MACHINE_MEMORY
 
     if machine_id in MACHINE_MEMORY:
 
@@ -82,36 +158,7 @@ def perform_maintenance(machine_id: str):
 
 
 # ==========================================
-# WEBSOCKET STREAM
-# ==========================================
-
-@app.websocket("/ws/machines")
-async def machine_stream(ws: WebSocket):
-
-    await ws.accept()
-    print("✅ WebSocket connected")
-
-    try:
-        while True:
-
-            machines = run_digital_twin()
-            analyzed = machine_analyzer.analyze_machines(machines)
-
-            valid = [
-                m for m in analyzed
-                if isinstance(m, dict) and m.get("machine_id")
-            ]
-
-            await ws.send_json(json_safe(valid))
-
-            await asyncio.sleep(1)
-
-    except Exception as e:
-        print("🚨 WEBSOCKET CRASH:", e)
-
-
-# ==========================================
-# STREAMING CHAT
+# STREAMING AI CHAT
 # ==========================================
 
 @app.post("/chat-stream")
@@ -126,3 +173,46 @@ async def chat_stream(query: str):
             await asyncio.sleep(0.02)
 
     return StreamingResponse(stream(), media_type="text/plain")
+
+# ==========================================
+# MACHINE HISTORY API
+# ==========================================
+
+@app.get("/machine-history/{machine_id}")
+def machine_history(machine_id: str, limit: int = 100):
+
+    db = SessionLocal()
+
+    try:
+
+        records = (
+            db.query(MachineLog)
+            .filter(MachineLog.machine_id == machine_id)
+            .order_by(MachineLog.timestamp.desc())
+            .limit(limit)
+            .all()
+        )
+
+        history = []
+
+        for r in records:
+
+            history.append({
+
+                "timestamp": r.timestamp,
+                "machine_id": r.machine_id,
+                "temperature": r.temperature,
+                "torque": r.torque,
+                "tool_wear": r.tool_wear,
+                "vibration_index": r.vibration_index,
+                "anomaly_score": r.anomaly_score,
+                "health_status": r.health_status,
+                "failure_probability": r.failure_probability
+
+            })
+
+        return history
+
+    finally:
+
+        db.close()
