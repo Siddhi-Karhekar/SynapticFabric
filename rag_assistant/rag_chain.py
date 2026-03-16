@@ -1,32 +1,32 @@
-from langchain_community.llms import Ollama
-
-from backend_fastapi.ai_engine.context_store import LATEST_PLANT_CONTEXT
-# Faster deterministic responses
-llm = Ollama(
-    model="llama3",
-    temperature=0.1,
-)
+import ollama
 
 
-def generate_answer(user_query: str) -> str:
-    """
-    Ultra-fast AI response using cached plant context.
-    """
+def generate_answer(context, query):
+    if not context or not query:
+        return "Context or query is missing."
 
-    context = LATEST_PLANT_CONTEXT
+    prompt = f"""You are an industrial AI assistant.
+Answer the question using the context below.
+Keep the answer SHORT (2–3 sentences max).
 
-    prompt = f"""
-You are an Industrial AI Maintenance Engineer.
-
-LIVE PLANT STATUS:
+Context:
 {context}
 
-USER QUESTION:
-{user_query}
-
-Provide concise engineering reasoning and actions.
+Question:
+{query}
 """
 
-    response = llm.invoke(prompt)
+    try:
+        response = ollama.chat(
+            model="phi3:mini",
+            messages=[
+                {"role": "system", "content": "You are a helpful industrial AI assistant."},
+                {"role": "user", "content": prompt}
+            ]
+        )
 
-    return response
+        return response.get("message", {}).get("content", "No response from model.")
+
+    except Exception as e:
+        print(f"LLM ERROR: {e}")
+        return "AI model error while generating response."

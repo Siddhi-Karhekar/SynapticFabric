@@ -2,7 +2,7 @@
 # SYNAPTICFABRIC — FASTAPI BACKEND
 # ==========================================
 
-from fastapi import FastAPI, WebSocket, Body
+from fastapi import FastAPI, WebSocket
 from fastapi.middleware.cors import CORSMiddleware
 import asyncio
 import json
@@ -14,6 +14,9 @@ from backend_fastapi.database.database import engine
 from backend_fastapi.database.models import Base
 from backend_fastapi.database.logger import log_machine_state
 from backend_fastapi.analytics.realtime_analytics import compute_realtime_analytics
+
+# IMPORT CHATBOT ROUTER
+from backend_fastapi.app.chatbot_api import router as chatbot_router
 
 
 # ==========================================
@@ -31,6 +34,9 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# REGISTER CHATBOT ROUTER
+app.include_router(chatbot_router)
 
 
 # ==========================================
@@ -123,62 +129,4 @@ def perform_maintenance(machine_id: str):
     return {
         "status": "maintenance completed",
         "machine": machine_id
-    }
-
-
-# ==========================================
-# CHATBOT API
-# ==========================================
-
-@app.post("/chat")
-async def chat(query: str = Body(...)):
-
-    machines = MACHINE_MEMORY
-
-    # Machine with highest failure risk
-    if "highest" in query.lower() and "failure" in query.lower():
-
-        highest = None
-        highest_score = 0
-
-        for m in machines:
-
-            score = machines[m]["tool_wear"] + machines[m]["vibration_index"]
-
-            if score > highest_score:
-                highest_score = score
-                highest = m
-
-        return {
-            "response": f"{highest} currently has the highest failure risk."
-        }
-
-    # Temperature question
-    if "temperature" in query.lower():
-
-        for m in machines:
-
-            if m.lower() in query.lower():
-
-                temp = 295 + machines[m]["vibration_index"] * 10
-
-                return {
-                    "response": f"The temperature of {m} is approximately {round(temp,2)} °C."
-                }
-
-    # Tool wear question
-    if "tool wear" in query.lower():
-
-        for m in machines:
-
-            if m.lower() in query.lower():
-
-                wear = machines[m]["tool_wear"] * 100
-
-                return {
-                    "response": f"{m} tool wear is {round(wear,1)}%."
-                }
-
-    return {
-        "response": "I could not understand the question."
     }

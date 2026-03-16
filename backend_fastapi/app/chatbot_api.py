@@ -1,4 +1,5 @@
-from fastapi import APIRouter
+from fastapi import APIRouter, Body
+
 from rag_assistant.rag_chain import generate_answer
 from vectordb.retrieve_context import get_machine_context
 from vectordb.semantic_retriever import retrieve_similar_context
@@ -8,19 +9,33 @@ from edge_ai.rul_predictor import predict_rul
 
 router = APIRouter()
 
+
 @router.post("/chat")
-def chat(query: str):
+def chat(payload: dict = Body(...)):
+
+    query = payload.get("query", "")
+
+    # ==========================================
+    # COLLECT CONTEXT
+    # ==========================================
 
     live_context = get_machine_context()
+
     historical_context = retrieve_similar_context(query)
+
     twin_context = get_digital_twin_state()
+
     explanation_context = generate_feature_explanation()
 
-    # example extraction (simple demo)
+    # Example values (can later extract real ones)
     tool_wear = 100
     anomaly_score = 0.6
 
     rul_context = predict_rul(tool_wear, anomaly_score)
+
+    # ==========================================
+    # BUILD FULL CONTEXT FOR LLM
+    # ==========================================
 
     full_context = f"""
 CURRENT MACHINE STATE:
@@ -39,6 +54,12 @@ RUL ESTIMATION:
 {rul_context}
 """
 
+    # ==========================================
+    # GENERATE AI RESPONSE
+    # ==========================================
+
     answer = generate_answer(full_context, query)
 
-    return {"answer": answer}
+    return {
+        "answer": answer
+    }
