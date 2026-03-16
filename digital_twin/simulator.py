@@ -19,20 +19,37 @@ def run_digital_twin():
 
     machines = []
 
-    for machine_id, state in MACHINE_MEMORY.items():
+    for machine_id in MACHINE_MEMORY:
 
-        # gradual degradation
-        state["tool_wear"] += random.uniform(0.0005, 0.002)
-        state["vibration_index"] += random.uniform(0.0005, 0.002)
-        state["anomaly_score"] += random.uniform(0.0005, 0.002)
+        state = MACHINE_MEMORY[machine_id]
 
-        # clamp values
-        state["tool_wear"] = min(state["tool_wear"], 1)
-        state["vibration_index"] = min(state["vibration_index"], 1.5)
-        state["anomaly_score"] = min(state["anomaly_score"], 1)
+        # -------------------------------
+        # GRADUAL DEGRADATION
+        # -------------------------------
+
+        state["tool_wear"] += random.uniform(0.001, 0.003)
+        state["vibration_index"] += random.uniform(0.001, 0.003)
+        state["anomaly_score"] += random.uniform(0.001, 0.003)
+
+        # -------------------------------
+        # CLAMP VALUES
+        # -------------------------------
+
+        state["tool_wear"] = max(0, min(state["tool_wear"], 1))
+        state["vibration_index"] = max(0, min(state["vibration_index"], 1.5))
+        state["anomaly_score"] = max(0, min(state["anomaly_score"], 1))
+
+        # -------------------------------
+        # SENSOR SIMULATION
+        # -------------------------------
 
         temperature = 295 + state["vibration_index"] * 10 + random.uniform(-1, 1)
+
         torque = random.uniform(38, 48)
+
+        # -------------------------------
+        # MACHINE OUTPUT
+        # -------------------------------
 
         machines.append({
             "machine_id": machine_id,

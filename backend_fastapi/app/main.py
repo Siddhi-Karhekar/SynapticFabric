@@ -1,5 +1,3 @@
-# backend_fastapi/app/main.py
-
 from fastapi import FastAPI, WebSocket
 from fastapi.middleware.cors import CORSMiddleware
 import asyncio
@@ -35,6 +33,7 @@ def json_safe(data):
 async def machine_stream(ws: WebSocket):
 
     await ws.accept()
+
     print("WebSocket connected")
 
     try:
@@ -43,14 +42,23 @@ async def machine_stream(ws: WebSocket):
 
             machines = run_digital_twin()
 
-            # prevent degradation immediately after maintenance
+            # Maintenance cooldown protection
             for m in machines:
+
                 mid = m["machine_id"]
+
                 if mid in MAINTENANCE_COOLDOWN:
-                    if time.time() - MAINTENANCE_COOLDOWN[mid] < 10:
-                        m["tool_wear"] = 0.05
-                        m["vibration_index"] = 0.3
-                        m["anomaly_score"] = 0.02
+
+                    elapsed = time.time() - MAINTENANCE_COOLDOWN[mid]
+
+                    if elapsed < 10:
+
+                        MACHINE_MEMORY[mid]["tool_wear"] = 0.02
+                        MACHINE_MEMORY[mid]["vibration_index"] = 0.25
+                        MACHINE_MEMORY[mid]["anomaly_score"] = 0.01
+
+                    else:
+                        del MAINTENANCE_COOLDOWN[mid]
 
             analyzed = machine_analyzer.analyze_machines(machines)
 
@@ -75,18 +83,18 @@ async def machine_stream(ws: WebSocket):
 @app.post("/maintenance/{machine_id}")
 def perform_maintenance(machine_id: str):
 
-    from digital_twin.simulator import MACHINE_MEMORY
-
     if machine_id not in MACHINE_MEMORY:
         return {"error": "machine not found"}
 
-    machine = MACHINE_MEMORY[machine_id]
+    MACHINE_MEMORY[machine_id]["tool_wear"] = 0.01
+    MACHINE_MEMORY[machine_id]["vibration_index"] = 0.15
+    MACHINE_MEMORY[machine_id]["anomaly_score"] = 0.005
 
-    # reset machine health
-    machine["tool_wear"] = 0.05
-    machine["vibration_index"] = 0.25
-    machine["anomaly_score"] = 0.05
+    MAINTENANCE_COOLDOWN[machine_id] = time.time()
 
-    print("✅ Maintenance applied:", machine_id)
+    print(f"Maintenance executed on {machine_id}")
 
-    return {"status": f"Maintenance performed on {machine_id}"}
+    return {
+        "status": "maintenance completed",
+        "machine": machine_id
+    }
