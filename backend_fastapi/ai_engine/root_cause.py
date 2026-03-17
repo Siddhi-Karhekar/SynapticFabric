@@ -7,23 +7,21 @@ def analyze_root_cause(machine):
     tool_wear = machine.get("tool_wear", 0)
     torque = machine.get("torque", 0)
 
-    # Temperature related faults
-    if temperature > 85:
-        causes.append("Cooling system degradation")
+    # 🔥 REAL INDUSTRIAL FAILURE TYPES
 
-    # Vibration related faults
+    if temperature > 85:
+        causes.append("Cooling system degradation (overheating risk)")
+
     if vibration > 0.7:
         causes.append("Bearing wear or spindle imbalance")
 
-    # Tool wear
     if tool_wear > 0.8:
-        causes.append("Cutting tool nearing end of life")
+        causes.append("Cutting tool nearing failure → risk of poor surface finish")
 
-    # Torque overload
     if torque > 60:
-        causes.append("Mechanical overload")
+        causes.append("Mechanical overload → excessive cutting force")
 
     if not causes:
-        causes.append("No abnormal mechanical pattern detected")
+        causes.append("Machine operating within normal industrial parameters")
 
     return causes
